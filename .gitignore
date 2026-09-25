@@ -1,0 +1,10 @@
+# OS / editor
+.DS_Store
+*.swp
+
+# logs / scratch
+*.log
+tmp/
+
+# node (none used yet, but future-proof)
+node_modules/
