@@ -27,10 +27,11 @@ for ~4 colocated players on mixed iPhone/Android phones.
 ## Run
 
 ```bash
-node server.js          # or: PORT=3100 node server.js
+node server.js          # port 80 (falls back to 3000); or: PORT=3100 node server.js
 ```
 
-Phones on the same WiFi open the `http://<laptop-ip>:<port>` line it prints.
+Phones on the same WiFi open `http://<mac-name>.local`, scan the QR code it
+prints, or use the IP line. Only same-WiFi devices are allowed (ARCHITECTURE A10).
 
 ## Status
 

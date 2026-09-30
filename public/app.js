@@ -135,22 +135,64 @@ function topbar(view) {
     </div>`;
 }
 
-// ---- Lobby -----------------------------------------------------------------
-function renderLobby(view) {
-  currentScreen = 'lobby';
-  app.className = 'app';
+// ---- Seating table (lobby + pick-reader) -----------------------------------
+// One row per player in seat order (= serial no. = guessing order). Drag the
+// ⠿ handle to move someone; tap Reader to designate. The "Guesses" column shows
+// the resulting guessing order: the seat after the Reader goes 1st, and the
+// Reader guesses last.
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+function guessOrder(view) {
+  const n = view.players.length;
+  const r = view.players.findIndex((p) => p.isReader);
+  if (r < 0) return null;
+  return view.players.map((_, i) => ((i - r - 1 + n) % n) + 1);
+}
+
+function seatingCard(view, noteHtml) {
+  const order = guessOrder(view);
   const rows = view.players
     .map(
-      (p, i) => `<div class="roster-row">
-        <span class="serial">${i + 1}</span>
-        ${avatar(p.name)}
-        <span class="name">${esc(p.name)}${p.id === view.you.id ? ' <small style="color:var(--muted)">(you)</small>' : ''}</span>
-        <button class="btn small ${p.isReader ? 'gold' : 'ghost'}" data-action="setReader" data-id="${p.id}">
+      (p, i) => `<div class="seat-row ${p.isReader ? 'is-reader' : ''}" data-seat-id="${p.id}">
+        <span class="drag-handle" data-drag-handle aria-label="Drag to reorder ${esc(p.name)}" title="Drag to reorder">⠿</span>
+        <span class="seat-no">${i + 1}</span>
+        <span class="seat-player">${avatar(p.name)}<span class="name">${esc(p.name)}${
+          p.id === view.you.id ? '<small>you</small>' : ''
+        }<small class="guess-inline">${order ? `guesses ${ordinal(order[i])}` : ''}</small></span></span>
+        <span class="seat-guess">${order ? ordinal(order[i]) : '—'}</span>
+        <button class="btn small seat-reader ${p.isReader ? 'gold' : 'ghost'}" data-action="setReader" data-id="${p.id}">
           ${p.isReader ? 'Reader ✓' : 'Reader'}
         </button>
       </div>`
     )
     .join('');
+  let flow = '<p class="seat-flow muted">Pick a Reader to see the guessing order.</p>';
+  if (order) {
+    const seq = view.players
+      .map((p, i) => ({ p, k: order[i] }))
+      .sort((a, b) => a.k - b.k)
+      .map(({ p }) => `<span class="${p.isReader ? 'flow-reader' : ''}">${esc(p.name)}${p.isReader ? ' (reader)' : ''}</span>`)
+      .join(' <span class="flow-arrow">→</span> ');
+    flow = `<p class="seat-flow"><span class="eyebrow dim">Guessing order</span><br />${seq}</p>`;
+  }
+  return `<div class="card">
+      <div class="seat-table" id="seatTable">
+        <div class="seat-head"><span></span><span>#</span><span>Player</span><span>Guesses</span><span></span></div>
+        ${rows}
+      </div>
+      ${flow}
+      ${noteHtml ? `<p class="note" style="margin-top:10px">${noteHtml}</p>` : ''}
+    </div>`;
+}
+
+// ---- Lobby -----------------------------------------------------------------
+function renderLobby(view) {
+  currentScreen = 'lobby';
+  app.className = 'app';
   const readerNo = view.players.findIndex((p) => p.isReader) + 1;
   const startLabel =
     view.players.length < 2
@@ -165,11 +207,10 @@ function renderLobby(view) {
         <h1 class="logo" style="font-size:clamp(2rem,10vw,3rem)">The <em>Table</em></h1>
         <div class="title-underline"></div>
       </div>
-      <div class="card">
-        <div class="card-head"><span class="eyebrow dim">Players (serial no.)</span></div>
-        <div class="roster">${rows}</div>
-        <p class="note" style="margin-top:10px">Tap <strong>Reader</strong> next to whoever reads first. Guessing starts with the next number, then goes around 1&nbsp;→&nbsp;2&nbsp;→&nbsp;3&nbsp;→&nbsp;…</p>
-      </div>
+      ${seatingCard(
+        view,
+        'Drag <strong>⠿</strong> to match where people sit. Tap <strong>Reader</strong> for whoever reads first — the next seat guesses first.'
+      )}
       <div>
         <div class="eyebrow dim" style="margin-bottom:8px">Last player standing scores</div>
         <div class="pill-row">
@@ -186,18 +227,6 @@ function renderLobby(view) {
 function renderPickReader(view) {
   currentScreen = 'pickReader';
   app.className = 'app';
-  const rows = view.players
-    .map(
-      (p, i) => `<div class="roster-row">
-        <span class="serial">${i + 1}</span>
-        ${avatar(p.name)}
-        <span class="name">${esc(p.name)}${p.id === view.you.id ? ' <small style="color:var(--muted)">(you)</small>' : ''}</span>
-        <button class="btn small ${p.isReader ? 'gold' : 'ghost'}" data-action="setReader" data-id="${p.id}">
-          ${p.isReader ? 'Reader ✓' : 'Reader'}
-        </button>
-      </div>`
-    )
-    .join('');
   app.innerHTML = `
     <div class="stack fade-in">
       <div class="topbar">
@@ -209,7 +238,7 @@ function renderPickReader(view) {
         <h2 class="section">Who's the reader?</h2>
         <p class="sub" style="margin-top:4px">Anyone can pick. The reader reads the card aloud, then everyone — reader included — answers. The next number guesses first.</p>
       </div>
-      <div class="card"><div class="roster">${rows}</div></div>
+      ${seatingCard(view, 'Drag <strong>⠿</strong> if anyone changed seats.')}
       <button class="btn gold" data-action="beginRound" ${view.canBegin ? '' : 'disabled'}>
         ${view.canBegin ? `Start round → ${esc(view.reader.name)} reads` : 'Pick a reader to start'}
       </button>
@@ -416,7 +445,11 @@ function renderRoundEnd(view) {
 // ===========================================================================
 // Router
 // ===========================================================================
+let lastView = null;
 function render(view) {
+  lastView = view;
+  // Mid-drag: hold the update and apply it on drop (re-rendering would cancel the drag).
+  if (drag) return;
   // Don't blow away the answer textarea while the player is still typing.
   if (view.phase === 'answering' && !view.you.submitted && currentScreen === 'answerInput') return;
 
@@ -485,6 +518,89 @@ function reflectGuessSelection() {
     btn.textContent = ready ? 'Lock in guess' : 'Pick a slip and a name';
   }
 }
+
+// ===========================================================================
+// Drag-and-drop seating (Pointer Events: works with mouse, iPhone and Android)
+// ===========================================================================
+let drag = null;
+
+app.addEventListener('pointerdown', (e) => {
+  const handle = e.target.closest('[data-drag-handle]');
+  if (!handle || drag) return;
+  const row = handle.closest('.seat-row');
+  const rows = [...document.querySelectorAll('#seatTable .seat-row')];
+  if (rows.length < 2) return;
+  e.preventDefault();
+  handle.setPointerCapture(e.pointerId);
+  const rects = rows.map((r) => r.getBoundingClientRect());
+  drag = {
+    pointerId: e.pointerId,
+    handle,
+    row,
+    rows,
+    mids: rects.map((r) => r.top + r.height / 2),
+    rowH: rects[1].top - rects[0].top,
+    from: rows.indexOf(row),
+    to: rows.indexOf(row),
+    startY: e.clientY,
+  };
+  row.classList.add('dragging');
+  document.getElementById('seatTable').classList.add('is-sorting');
+});
+
+app.addEventListener('pointermove', (e) => {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  e.preventDefault();
+  const dy = e.clientY - drag.startY;
+  drag.row.style.transform = `translateY(${dy}px)`;
+  const center = drag.mids[drag.from] + dy;
+  let to = drag.from;
+  while (to < drag.rows.length - 1 && center > drag.mids[to + 1]) to++;
+  while (to > 0 && center < drag.mids[to - 1]) to--;
+  if (to !== drag.to) previewOrder(drag.from, to);
+  drag.to = to;
+  drag.rows.forEach((r, i) => {
+    if (r === drag.row) return;
+    let shift = 0;
+    if (drag.from < to && i > drag.from && i <= to) shift = -drag.rowH;
+    if (drag.from > to && i < drag.from && i >= to) shift = drag.rowH;
+    r.style.transform = shift ? `translateY(${shift}px)` : '';
+  });
+});
+
+// While dragging, renumber seats and recompute the Guesses column as if dropped here.
+function previewOrder(from, to) {
+  if (!lastView) return;
+  const players = lastView.players.slice();
+  const [p] = players.splice(from, 1);
+  players.splice(to, 0, p);
+  const order = guessOrder({ players });
+  drag.rows.forEach((row) => {
+    const i = players.findIndex((x) => x.id === row.dataset.seatId);
+    row.querySelector('.seat-no').textContent = i + 1;
+    row.querySelector('.seat-guess').textContent = order ? ordinal(order[i]) : '—';
+    row.querySelector('.guess-inline').textContent = order ? `guesses ${ordinal(order[i])}` : '';
+  });
+}
+
+function endDrag(e) {
+  if (!drag || e.pointerId !== drag.pointerId) return;
+  const { row, from, to } = drag;
+  const id = row.dataset.seatId;
+  drag = null;
+  if (to !== from && lastView) {
+    // Show the new order immediately; the server's broadcast confirms it.
+    const players = lastView.players.slice();
+    const [p] = players.splice(from, 1);
+    players.splice(to, 0, p);
+    render({ ...lastView, players });
+    act('movePlayer', { playerId: id, toIndex: to });
+  } else if (lastView) {
+    render(lastView); // also applies any update that arrived mid-drag
+  }
+}
+app.addEventListener('pointerup', endDrag);
+app.addEventListener('pointercancel', endDrag);
 
 // ===========================================================================
 // Boot

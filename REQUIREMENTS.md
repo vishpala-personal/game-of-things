@@ -88,6 +88,20 @@ WiFi, the game, or how to get in, so it doesn't invite attempts to break into
 the network. The laptop itself (`localhost`) is always allowed. No setting turns this
 off; internet hosting (backlog) would need to revisit it deliberately.
 
+### Joining — simple, stable URL + QR code
+
+The laptop's IP address changes, so phones shouldn't depend on it. At startup
+the server prints:
+
+- a **name URL** from the Mac's Bonjour name, e.g. `http://gamenight.local` —
+  stable across IP changes (set once in macOS Sharing settings);
+- a **QR code** in the Terminal (encoding the current IP URL) for phones that
+  can't open `.local` names (some Androids) or to skip typing;
+- the raw **IP URL** as a last resort.
+
+It runs on port **80** so URLs have no `:port`; if 80 is unavailable it falls
+back to 3000.
+
 ### Guessing model — each player guesses on their own phone
 
 Players guess on **their own phones**, not via the Reader operating a shared
@@ -102,8 +116,16 @@ board. Specifics:
 
 ### Reader designation — chosen each round (not auto-assigned)
 
-- Players are given **serial numbers 1, 2, 3, 4… by join order** (no manual
-  reordering). This is the fixed order used to sequence guessing.
+- Players are given **serial numbers 1, 2, 3, 4… by join order**, shown in a
+  **seating table**. **Any player can drag a name (⠿ handle) to a new seat** in
+  the lobby or on the pick-reader screen, so the order matches where people
+  actually sit. Seat number = guessing order. (Reordering is locked during a
+  round.) *Supersedes the earlier "no manual reordering" decision — the plain
+  list made the order hard to visualise.*
+- The table has a **Guesses** column (1st, 2nd, …) recomputed from the Reader,
+  plus a one-line **guessing order** ("Dan → Ann → Bob → Cat (reader)"). Both
+  update live while dragging. On phones (≤430px) the column moves to a small
+  "guesses Nth" line under each name so long names fit.
 - Each player row shows a **Reader** button that **any player** can press to
   select who reads. The selection is **committed when the round is started**:
   - **Round 1** — the Reader is chosen in the **lobby**; pressing **Start the

@@ -92,6 +92,18 @@ ephemeral UI (current selection, in-progress answer text) lives in a small local
 while the player is still typing** (other players submitting would otherwise wipe
 their draft). **Why:** simplest correct model for an app this size.
 
+### A7a. Drag-to-reorder seating
+
+Custom drag built on **Pointer Events** (one code path for mouse, iPhone and
+Android — HTML5 drag-and-drop doesn't work on touch). The handle has
+`touch-action: none` so a finger drags the row instead of scrolling the page.
+While a drag is in progress, incoming server views are **held** (re-rendering
+would cancel the drag) and applied on drop. The client sends a single
+`movePlayer {playerId, toIndex}` action, not a whole new order, so a join or
+another player's move that happens at the same time isn't overwritten. The
+server only accepts it in `lobby`/`pickReader`. The dropped order is shown
+immediately; the broadcast confirms it.
+
 ### A8. 30-second banner — server timer + monotonic token
 
 A resolved guess is flashed on the reader's board for 30s, then cleared by a
@@ -133,6 +145,23 @@ not the host themselves. VPN interfaces with broad subnets on the laptop could
 admit peers on that VPN. Guest-network client isolation is the router's concern.
 Pure helpers are exported (`module.exports`) for tests; `listen()` only runs when
 `server.js` is executed directly.
+
+### A11. Startup URL — Bonjour name, port 80, terminal QR
+
+IP addresses change, so the banner leads with `http://<LocalHostName>.local`
+(read via `scutil --get LocalHostName` on macOS; `os.hostname()` elsewhere).
+macOS's own mDNS responder already advertises that name, so we add no mDNS code.
+Port **80** by default (macOS allows unprivileged binds since 10.14) so the URL
+has no port; on `EACCES`/`EADDRINUSE` it falls back to 3000. An explicit `PORT`
+env disables the fallback. A QR code of the current IP URL is printed with
+half-block characters (forced black-on-white ANSI colours so it scans on dark
+terminals) for phones that can't resolve `.local` (some Androids).
+
+**QR encoder (`qr.js`):** hand-written, zero-dependency (consistent with A2) —
+byte mode, ECC level M, versions 1–6 (≤106 bytes), all 8 masks scored by the
+standard penalty rules. Verified bit-for-bit against the Python `qrcode`
+library and decoded by OpenCV and zbar. `child_process` (for `scutil`) is a Node
+built-in, so A2 still holds.
 
 ## Known limitations / non-goals (current)
 

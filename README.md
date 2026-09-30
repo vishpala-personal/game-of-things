@@ -17,9 +17,20 @@ there are zero dependencies.
 node server.js
 ```
 
-The console prints the addresses. Everyone on the **same WiFi** opens the
-`http://<laptop-ip>:3000` line on their phone. (On macOS you may get a firewall
-prompt the first time — click **Allow**.)
+The console prints how phones join, three ways (everyone must be on the **same
+WiFi**):
+
+- **Name URL** — `http://<your-mac-name>.local`, e.g. `http://gamenight.local`.
+  It never changes, even when the laptop's IP address does. Set a short name
+  once in **System Settings → General → Sharing → Local hostname → Edit**.
+  Works on iPhones; some Android phones can't open `.local` names — they use the
+  QR code instead.
+- **QR code** — shown right in the Terminal; point a phone camera at it.
+- **IP address** — e.g. `http://192.168.1.23` (changes from time to time).
+
+The server uses the standard web port 80 so there's no `:3000` to type. If port 80
+is busy it falls back to 3000 (the printed URLs will include `:3000`). On macOS
+you may get a firewall prompt the first time — click **Allow**.
 
 Only devices on the **same WiFi** as the laptop can connect — anyone else (the
 internet, another network, a tunnel like ngrok) just sees "Sorry, you are not
@@ -30,7 +41,8 @@ allowed in." with no hint about the WiFi or how to get in.
 ## How a round flows
 
 1. **Join** — everyone enters a name and is numbered **1, 2, 3, …** in join
-   order. In the lobby, tap **Reader** next to whoever reads first and set whether
+   order. In the lobby's seating table, drag **⠿** to match where people sit
+   (the table shows who guesses 1st, 2nd, …), tap **Reader** next to whoever reads first and set whether
    the last player standing scores **3** or **2** points, then **Start** (which
    commits the reader).
 2. **Answer** — the reader reads the physical card aloud. Everyone (reader
@@ -71,5 +83,6 @@ allowed in." with no hint about the WiFi or how to get in.
 
 ## Files
 
-- `server.js` — HTTP server, game logic, per-player views.
+- `server.js` — HTTP server, game logic, per-player views, network guard.
+- `qr.js` — tiny built-in QR encoder for the startup code (no dependencies).
 - `public/index.html`, `public/styles.css`, `public/app.js` — the client.

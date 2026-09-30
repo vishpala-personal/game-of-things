@@ -20,8 +20,14 @@ const path = require('path');
 const crypto = require('crypto');
 const net = require('net');
 const os = require('os');
+const { execFileSync } = require('child_process');
+const { qrTerminal } = require('./qr');
 
-const PORT = process.env.PORT || 3000;
+// Default port 80 so phone URLs need no ":port" (macOS lets normal users bind
+// it). Falls back to 3000 if 80 is busy/not permitted. PORT env overrides both.
+const PORT_FROM_ENV = process.env.PORT ? Number(process.env.PORT) : null;
+const DEFAULT_PORT = 80;
+const FALLBACK_PORT = 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 const BANNER_MS = 30000; // how long a resolved guess flashes / feedback lingers
 
@@ -123,6 +129,18 @@ function goToPickReader() {
 function setReader(pid) {
   if ((game.phase !== 'lobby' && game.phase !== 'pickReader') || !player(pid)) return;
   game.readerId = pid;
+}
+
+// Any player may drag a name to a new seat, in the lobby or between rounds.
+// Seating order = array order = serial numbers = guessing order. Expressed as a
+// single move (not a whole new order) so a concurrent join/move can't be lost.
+function movePlayer(playerId, toIndex) {
+  if (game.phase !== 'lobby' && game.phase !== 'pickReader') return;
+  const from = idxOf(playerId);
+  const to = Number(toIndex);
+  if (from < 0 || !Number.isInteger(to) || to < 0 || to >= game.players.length || to === from) return;
+  const [p] = game.players.splice(from, 1);
+  game.players.splice(to, 0, p);
 }
 
 function beginRound() {
@@ -393,6 +411,9 @@ function handleAction(pid, body) {
     case 'beginRound':
       beginRound();
       break;
+    case 'movePlayer':
+      movePlayer(body.playerId, body.toIndex);
+      break;
     case 'submitAnswer':
       submitAnswer(pid, body.text);
       break;
@@ -645,20 +666,83 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res);
 });
 
-if (require.main === module) {
-  server.listen(PORT, () => {
-    const nets = os.networkInterfaces();
-    const ips = [];
-    for (const name of Object.keys(nets)) {
-      for (const n of nets[name]) {
-        if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
-      }
+// ---------------------------------------------------------------------------
+// Startup: friendly phone URL + QR code
+// ---------------------------------------------------------------------------
+
+// The Mac's Bonjour name (System Settings → General → Sharing → Local hostname),
+// e.g. "gamenight.local". Stays the same even when the WiFi IP address changes.
+function localName() {
+  try {
+    const n = execFileSync('scutil', ['--get', 'LocalHostName'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    if (n) return `${n}.local`.toLowerCase();
+  } catch {
+    /* not macOS */
+  }
+  const h = os.hostname().replace(/\.local$/i, '');
+  return /^[a-z0-9-]+$/i.test(h) ? `${h}.local`.toLowerCase() : null;
+}
+
+function lanIPv4s() {
+  const ips = [];
+  for (const list of Object.values(os.networkInterfaces())) {
+    for (const n of list || []) {
+      if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
     }
-    console.log('\n  🎭  Game of Things is running.\n');
-    console.log(`  On this laptop:   http://localhost:${PORT}`);
-    ips.forEach((ip) => console.log(`  On phones (WiFi): http://${ip}:${PORT}`));
-    console.log('\n  Only devices on this WiFi can connect. Ctrl+C to stop.\n');
-  });
+  }
+  return ips;
+}
+
+function printBanner(port) {
+  const suffix = port === 80 ? '' : `:${port}`;
+  const name = localName();
+  const ips = lanIPv4s();
+  console.log('\n  🎭  Game of Things is running.\n');
+  if (!ips.length) {
+    console.log('  ⚠️   This laptop isn\'t on a WiFi network — phones can\'t join until it is.\n');
+  }
+  if (name && ips.length) {
+    console.log(`  Phones (same WiFi):  http://${name}${suffix}`);
+    if (name !== 'gamenight.local') {
+      console.log('                       Want http://gamenight.local instead? On this Mac open');
+      console.log('                       System Settings → General → Sharing → Local hostname');
+      console.log('                       → Edit…, type "gamenight", click OK, then restart this.');
+    }
+  }
+  ips.forEach((ip) => console.log(`  Or by address:       http://${ip}${suffix}`));
+  console.log(`  On this laptop:      http://localhost${suffix}`);
+  if (ips.length) {
+    console.log('\n  Or point a phone camera at this code:\n');
+    console.log(qrTerminal(`http://${ips[0]}${suffix}`).replace(/^/gm, '  '));
+  }
+  console.log('\n  Only devices on this WiFi can connect. Ctrl+C to stop.\n');
+}
+
+function start(port, canFallback) {
+  const onListening = () => {
+    server.removeListener('error', onError);
+    printBanner(port);
+  };
+  const onError = (err) => {
+    server.removeListener('listening', onListening);
+    if (canFallback && (err.code === 'EACCES' || err.code === 'EADDRINUSE')) {
+      console.log(`  (Port ${port} isn't available — using ${FALLBACK_PORT} instead.)`);
+      start(FALLBACK_PORT, false);
+      return;
+    }
+    console.error(`  Could not start on port ${port}: ${err.message}`);
+    process.exit(1);
+  };
+  server.once('error', onError);
+  server.once('listening', onListening);
+  server.listen(port);
+}
+
+if (require.main === module) {
+  start(PORT_FROM_ENV || DEFAULT_PORT, !PORT_FROM_ENV);
 }
 
 // Exported for tests only.
