@@ -21,6 +21,10 @@ The console prints the addresses. Everyone on the **same WiFi** opens the
 `http://<laptop-ip>:3000` line on their phone. (On macOS you may get a firewall
 prompt the first time — click **Allow**.)
 
+Only devices on the **same WiFi** as the laptop can connect — anyone else (the
+internet, another network, a tunnel like ngrok) just sees "Sorry, you are not
+allowed in." with no hint about the WiFi or how to get in.
+
 > Tip: add it to your home screen ("Add to Home Screen") for an app-like icon.
 
 ## How a round flows

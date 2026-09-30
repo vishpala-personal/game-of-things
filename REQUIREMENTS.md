@@ -77,6 +77,17 @@ Run on a laptop on the home WiFi; phones connect to `http://<laptop-ip>:<port>`.
 No internet or hosting dependency for now. **Internet hosting (join-by-link, no
 laptop) is a possible future step, not built yet.**
 
+### Guardrail — same-WiFi devices only
+
+Only devices on the **same WiFi (local network) as the host laptop** can load
+the app, join, or play. Anyone else — reaching the laptop from the internet, a
+different network, a VPN, or through a tunnel/port-forward (ngrok, Cloudflare
+Tunnel, etc.) — gets a plain **"Sorry, you are not allowed in."** page and
+cannot interact with the game. The page deliberately gives **no hint** about
+WiFi, the game, or how to get in, so it doesn't invite attempts to break into
+the network. The laptop itself (`localhost`) is always allowed. No setting turns this
+off; internet hosting (backlog) would need to revisit it deliberately.
+
 ### Guessing model — each player guesses on their own phone
 
 Players guess on **their own phones**, not via the Reader operating a shared

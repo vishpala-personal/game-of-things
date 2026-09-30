@@ -105,10 +105,40 @@ Files under `public/` are served directly, with a path-traversal guard
 (resolved path must stay within `public/`) and `Cache-Control: no-store` so
 clients always load the latest build.
 
+### A10. Same-WiFi network guard
+
+Every HTTP request (page, static files, `/join`, `/events`, `/action`) passes
+`isRequestAllowed()` first, or gets a 403 page reading only "Sorry, you are not
+allowed in." — no mention of WiFi, the app, or how to get access, so a blocked
+visitor learns nothing useful for an intrusion attempt. Three checks:
+
+1. **Source IP on a local subnet.** The socket's remote address must be
+   loopback, or inside a subnet of one of the laptop's non-internal network
+   interfaces (`os.networkInterfaces()` `cidr`). IPv4 must additionally be a
+   private/link-local range (10/8, 172.16/12, 192.168/16, 169.254/16), so a
+   laptop with a public-IP interface doesn't admit its ISP neighbours; IPv6 only
+   matches subnets of /64 or narrower. IPv4-mapped IPv6 and zone ids are handled.
+   Subnets are re-read per request, so changing WiFi needs no restart.
+2. **No forwarding headers** (`Forwarded`, `X-Forwarded-*`, `X-Real-IP`,
+   `CF-Connecting-IP`, `True-Client-IP`). Tunnels relay internet traffic from
+   `127.0.0.1`, which would otherwise pass check 1.
+3. **Host header is local-looking** — an IP literal, `localhost`, a bare machine
+   name, or an mDNS `*.local` name. Public domains (e.g. `*.ngrok-free.app`) are
+   rejected; this also blocks DNS-rebinding attacks from web pages.
+
+**Why at the server:** it's the only place that sees the real socket address.
+**Trade-offs / limits:** a determined user on the laptop could run a tunnel that
+strips headers and rewrites Host — the guard stops accidental or casual exposure,
+not the host themselves. VPN interfaces with broad subnets on the laptop could
+admit peers on that VPN. Guest-network client isolation is the router's concern.
+Pure helpers are exported (`module.exports`) for tests; `listen()` only runs when
+`server.js` is executed directly.
+
 ## Known limitations / non-goals (current)
 
 - **No auth / trust model.** Anyone on the LAN who knows a pid can act as that
   player. Acceptable for friends in one room; revisit before any public hosting.
+  (Off-network devices are blocked entirely — see A10.)
 - **No persistence** across server restart.
 - **Single game/room** only.
 - **No forced round termination** if every player keeps guessing wrong — the

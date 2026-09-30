@@ -18,6 +18,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const net = require('net');
+const os = require('os');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -414,6 +416,129 @@ function handleAction(pid, body) {
 }
 
 // ---------------------------------------------------------------------------
+// Same-WiFi guard  (the network boundary)
+//
+// Only devices on the laptop's own local network may load the app or play.
+// Every request must pass three checks (failures get a generic "not allowed"
+// page that gives no hint about WiFi or how to get in):
+//   1. The connecting IP is loopback, or inside one of the laptop's local
+//      subnets (IPv4 must also be a private/link-local range).
+//   2. No proxy/tunnel forwarding headers (ngrok, Cloudflare Tunnel, reverse
+//      proxies relay internet traffic from 127.0.0.1 and add these).
+//   3. The Host header is an IP literal, `localhost`, a bare machine name, or an
+//      mDNS `*.local` name — never a public domain (blocks tunnels + DNS rebinding).
+// Subnets are re-read on each request, so switching WiFi networks just works.
+// ---------------------------------------------------------------------------
+
+const FORWARD_HEADERS = [
+  'forwarded',
+  'x-forwarded-for',
+  'x-forwarded-host',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+];
+
+// IPv4/IPv6 string -> array of 4 or 16 bytes (IPv4-mapped IPv6 -> 4 bytes), or null.
+function ipToBytes(ip) {
+  ip = String(ip || '').split('%')[0]; // drop IPv6 zone id, e.g. fe80::1%en0
+  if (net.isIPv4(ip)) return ip.split('.').map(Number);
+  if (!net.isIPv6(ip)) return null;
+  const mapped = ip.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
+  if (mapped) return mapped[1].split('.').map(Number);
+  const [head, tail] = ip.split('::');
+  const expand = (str) =>
+    (str ? str.split(':') : []).flatMap((g) => {
+      if (!g.includes('.')) return [g];
+      const b = g.split('.').map(Number); // embedded IPv4 tail
+      return [((b[0] << 8) | b[1]).toString(16), ((b[2] << 8) | b[3]).toString(16)];
+    });
+  const h = expand(head);
+  const t = tail === undefined ? [] : expand(tail);
+  const groups = tail === undefined ? h : [...h, ...Array(8 - h.length - t.length).fill('0'), ...t];
+  if (groups.length !== 8) return null;
+  return groups.flatMap((g) => {
+    const n = parseInt(g, 16);
+    return [n >> 8, n & 255];
+  });
+}
+
+function inSubnet(addr, netAddr, prefix) {
+  if (addr.length !== netAddr.length) return false;
+  for (let i = 0; i < addr.length; i++) {
+    const bits = Math.max(0, Math.min(8, prefix - i * 8));
+    if (bits === 0) return true;
+    const mask = (0xff << (8 - bits)) & 0xff;
+    if ((addr[i] & mask) !== (netAddr[i] & mask)) return false;
+  }
+  return true;
+}
+
+const isLoopback = (b) => (b.length === 4 ? b[0] === 127 : b.every((x, i) => x === (i === 15 ? 1 : 0)));
+
+// RFC 1918 private + 169.254/16 link-local.
+const isPrivateV4 = (b) =>
+  b[0] === 10 || (b[0] === 172 && b[1] >= 16 && b[1] <= 31) || (b[0] === 192 && b[1] === 168) || (b[0] === 169 && b[1] === 254);
+
+// The laptop's own (non-loopback) networks, from its network interfaces.
+function localSubnets(ifaces = os.networkInterfaces()) {
+  const out = [];
+  for (const list of Object.values(ifaces)) {
+    for (const n of list || []) {
+      if (n.internal || !n.cidr) continue;
+      const [addr, prefix] = n.cidr.split('/');
+      const bytes = ipToBytes(addr);
+      if (bytes) out.push({ bytes, prefix: Number(prefix) });
+    }
+  }
+  return out;
+}
+
+function isSameNetwork(remoteIp, subnets = localSubnets()) {
+  const b = ipToBytes(remoteIp);
+  if (!b) return false;
+  if (isLoopback(b)) return true;
+  if (b.length === 4 && !isPrivateV4(b)) return false;
+  return subnets.some(
+    (s) => s.bytes.length === b.length && (b.length === 4 || s.prefix >= 64) && inSubnet(b, s.bytes, s.prefix)
+  );
+}
+
+function isAllowedHost(hostHeader) {
+  let host = String(hostHeader || '').trim().toLowerCase();
+  if (!host) return false;
+  if (host.startsWith('[')) host = host.slice(1, host.indexOf(']')); // [ipv6]:port
+  else host = host.replace(/:\d+$/, '');
+  if (net.isIP(host.split('%')[0])) return true;
+  if (host === 'localhost' || host.endsWith('.local')) return true;
+  return /^[a-z0-9-]+$/.test(host); // bare machine name (no public domain)
+}
+
+function isRequestAllowed(req, subnets) {
+  if (FORWARD_HEADERS.some((h) => req.headers[h] !== undefined)) return false;
+  if (!isAllowedHost(req.headers.host)) return false;
+  return isSameNetwork(req.socket.remoteAddress, subnets);
+}
+
+const warnedIps = new Set();
+function rejectOffNetwork(req, res) {
+  const ip = req.socket.remoteAddress;
+  if (!warnedIps.has(ip)) {
+    warnedIps.add(ip);
+    console.log(`  ⛔  Blocked a device that isn't on this WiFi (${ip}, host "${req.headers.host || ''}").`);
+  }
+  res.writeHead(403, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  // Deliberately generic: no mention of WiFi, the game, or how to get in, so a
+  // blocked visitor learns nothing useful about the network or the app.
+  res.end(
+    '<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">' +
+      '<title>Not allowed</title>' +
+      '<body style="font-family:system-ui,sans-serif;background:#1a1420;color:#f3e9d2;padding:2rem;line-height:1.5">' +
+      '<h1>Sorry, you are not allowed in.</h1></body>'
+  );
+}
+
+// ---------------------------------------------------------------------------
 // HTTP
 // ---------------------------------------------------------------------------
 
@@ -454,6 +579,10 @@ function readJsonBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
+  if (!isRequestAllowed(req)) {
+    rejectOffNetwork(req, res);
+    return;
+  }
   const url = new URL(req.url, `http://${req.headers.host}`);
 
   // Realtime stream ---------------------------------------------------------
@@ -516,16 +645,21 @@ const server = http.createServer(async (req, res) => {
   serveStatic(req, res);
 });
 
-server.listen(PORT, () => {
-  const nets = require('os').networkInterfaces();
-  const ips = [];
-  for (const name of Object.keys(nets)) {
-    for (const n of nets[name]) {
-      if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
+if (require.main === module) {
+  server.listen(PORT, () => {
+    const nets = os.networkInterfaces();
+    const ips = [];
+    for (const name of Object.keys(nets)) {
+      for (const n of nets[name]) {
+        if (n.family === 'IPv4' && !n.internal) ips.push(n.address);
+      }
     }
-  }
-  console.log('\n  🎭  Game of Things is running.\n');
-  console.log(`  On this laptop:   http://localhost:${PORT}`);
-  ips.forEach((ip) => console.log(`  On phones (WiFi): http://${ip}:${PORT}`));
-  console.log('\n  Everyone must be on the same WiFi. Ctrl+C to stop.\n');
-});
+    console.log('\n  🎭  Game of Things is running.\n');
+    console.log(`  On this laptop:   http://localhost:${PORT}`);
+    ips.forEach((ip) => console.log(`  On phones (WiFi): http://${ip}:${PORT}`));
+    console.log('\n  Only devices on this WiFi can connect. Ctrl+C to stop.\n');
+  });
+}
+
+// Exported for tests only.
+module.exports = { server, ipToBytes, inSubnet, localSubnets, isSameNetwork, isAllowedHost, isRequestAllowed };

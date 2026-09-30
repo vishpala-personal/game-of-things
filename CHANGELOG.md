@@ -3,6 +3,23 @@
 Running build log, newest first. Each entry: what changed and why. Requirements
 live in `REQUIREMENTS.md`; architecture in `ARCHITECTURE.md`.
 
+## 2026-09-29
+
+### Added — same-WiFi guardrail
+- The server now rejects (403 page: "Sorry, you are not allowed in." — no
+  mention of WiFi or how to get access, to avoid inviting intrusion attempts)
+  any request that isn't
+  from the laptop itself or a device on one of its local subnets, carries
+  proxy/tunnel forwarding headers, or uses a non-local Host name. Applies to the
+  page, static files, `/join`, `/events` and `/action`. Blocked IPs are logged
+  once to the console. See `ARCHITECTURE.md` A10, `REQUIREMENTS.md` guardrail.
+- `server.js` only calls `listen()` when run directly and exports the guard
+  helpers, so they can be tested without starting the game.
+- **Verified on Node 22.23.2:** 21 guard assertions (same/other subnet, public
+  IP, VPN peer, loopback, IPv4-mapped + IPv6 link-local/global, forwarding
+  headers, foreign Host, live 403s on page/join/SSE) and the 7-assertion
+  gameplay smoke test. All passed. (Test harness not kept in the repo.)
+
 ## 2026-08-28
 
 ### Fixed
