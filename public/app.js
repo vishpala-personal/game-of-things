@@ -135,11 +135,11 @@ function topbar(view) {
     </div>`;
 }
 
-// ---- Seating table (lobby + pick-reader) -----------------------------------
-// One row per player in seat order (= serial no. = guessing order). Drag the
-// ⠿ handle to move someone; tap Reader to designate. The "Guesses" column shows
-// the resulting guessing order: the seat after the Reader goes 1st, and the
-// Reader guesses last.
+// ---- Round table (lobby + pick-reader) -------------------------------------
+// Players sit around a drawn table in seat order (= serial no. = guessing
+// order), clockwise from the top. Drag someone to where they really sit; tap
+// someone to make them the Reader. Guessing goes clockwise (to each person's
+// left), starting with the seat after the Reader; the Reader guesses last.
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
@@ -153,53 +153,103 @@ function guessOrder(view) {
   return view.players.map((_, i) => ((i - r - 1 + n) % n) + 1);
 }
 
-function seatingCard(view, noteHtml) {
-  const order = guessOrder(view);
-  const rows = view.players
-    .map(
-      (p, i) => `<div class="seat-row ${p.isReader ? 'is-reader' : ''}" data-seat-id="${p.id}">
-        <span class="drag-handle" data-drag-handle aria-label="Drag to reorder ${esc(p.name)}" title="Drag to reorder">⠿</span>
-        <span class="seat-no">${i + 1}</span>
-        <span class="seat-player">${avatar(p.name)}<span class="name">${esc(p.name)}${
-          p.id === view.you.id ? '<small>you</small>' : ''
-        }<small class="guess-inline">${order ? `guesses ${ordinal(order[i])}` : ''}</small></span></span>
-        <span class="seat-guess">${order ? ordinal(order[i]) : '—'}</span>
-        <button class="btn small seat-reader ${p.isReader ? 'gold' : 'ghost'}" data-action="setReader" data-id="${p.id}">
-          ${p.isReader ? 'Reader ✓' : 'Reader'}
-        </button>
-      </div>`
-    )
-    .join('');
-  let flow = '<p class="seat-flow muted">Pick a Reader to see the guessing order.</p>';
-  if (order) {
-    const seq = view.players
-      .map((p, i) => ({ p, k: order[i] }))
-      .sort((a, b) => a.k - b.k)
-      .map(({ p }) => `<span class="${p.isReader ? 'flow-reader' : ''}">${esc(p.name)}${p.isReader ? ' (reader)' : ''}</span>`)
-      .join(' <span class="flow-arrow">→</span> ');
-    flow = `<p class="seat-flow"><span class="eyebrow dim">Guessing order</span><br />${seq}</p>`;
+// % of the table box. With more people the table shrinks a little and seats
+// move outward, so neighbours don't collide.
+const seatR = (n) => (n > 6 ? 41 : 39); // where seats sit
+const flowR = (n) => (n > 6 ? 19 : 21); // the clockwise arrows on the table top
+const seatAngle = (i, n) => -90 + (i * 360) / n; // degrees, clockwise from top
+function seatPos(i, n, r = seatR(n)) {
+  const a = (seatAngle(i, n) * Math.PI) / 180;
+  return { x: 50 + r * Math.cos(a), y: 50 + r * Math.sin(a) };
+}
+
+// Clockwise arrows between neighbouring seats; the one leaving the Reader
+// (Reader → first guesser) is gold: that's where guessing starts.
+function flowArrows(n, readerIdx) {
+  if (n < 2) return '';
+  const pad = Math.min(14, 120 / n);
+  const FLOW_R = flowR(n);
+  let d = '';
+  for (let i = 0; i < n; i++) {
+    const a0 = seatAngle(i, n) + pad;
+    const a1 = seatAngle(i + 1, n) - pad;
+    const p0 = { x: 50 + FLOW_R * Math.cos((a0 * Math.PI) / 180), y: 50 + FLOW_R * Math.sin((a0 * Math.PI) / 180) };
+    const p1 = { x: 50 + FLOW_R * Math.cos((a1 * Math.PI) / 180), y: 50 + FLOW_R * Math.sin((a1 * Math.PI) / 180) };
+    const large = a1 - a0 > 180 ? 1 : 0;
+    const start = i === readerIdx;
+    d += `<path class="flow ${start ? 'start' : ''}" d="M ${p0.x.toFixed(2)} ${p0.y.toFixed(2)} A ${FLOW_R} ${FLOW_R} 0 ${large} 1 ${p1.x.toFixed(2)} ${p1.y.toFixed(2)}" marker-end="url(#${start ? 'arrowGold' : 'arrow'})" />`;
   }
-  return `<div class="card">
-      <div class="seat-table" id="seatTable">
-        <div class="seat-head"><span></span><span>#</span><span>Player</span><span>Guesses</span><span></span></div>
-        ${rows}
+  return `<svg class="table-flow" viewBox="0 0 100 100" aria-hidden="true">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="arrowhead" /></marker>
+        <marker id="arrowGold" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="arrowhead gold" /></marker>
+      </defs>${d}</svg>`;
+}
+
+function seatChip(p, i, n, order, view) {
+  const pos = seatPos(i, n);
+  const g = order ? order[i] : null;
+  const initials = esc(p.name.trim().slice(0, 2).toUpperCase());
+  const label = `${p.name}${p.isReader ? ', reader' : ''}${g ? `, guesses ${ordinal(g)}` : ''}. Tap to make reader, drag to move.`;
+  return `<button class="seat-chip ${p.isReader ? 'is-reader' : ''} ${p.id === view.you.id ? 'is-you' : ''}"
+      data-seat-id="${p.id}" style="left:${pos.x}%;top:${pos.y}%" aria-label="${esc(label)}">
+      <span class="chip-avatar" style="background:${avatarColor(p.name)}">${initials}<span class="chip-order">${g || ''}</span></span>
+      <span class="chip-name ${p.name.length > 12 ? 'longer' : p.name.length > 8 ? 'long' : ''}">${esc(p.name)}</span>
+      <span class="chip-tag">${p.isReader ? '<span class="tag reader">Reader</span>' : p.id === view.you.id ? 'you' : ''}</span>
+    </button>`;
+}
+
+function tableCenter(view, order) {
+  if (!order) {
+    return `<div class="table-center" id="tableCenter"><div class="tc-big">Tap a player</div><div class="tc-small">to make them the Reader</div></div>`;
+  }
+  const reader = view.players.find((p) => p.isReader);
+  const first = view.players[order.indexOf(1)];
+  return `<div class="table-center" id="tableCenter">
+      <div class="tc-small">Reader</div><div class="tc-big gold">${esc(reader.name)}</div>
+      <div class="tc-small">first guess</div><div class="tc-big">${esc(first.name)}</div>
+    </div>`;
+}
+
+function tableCard(view, noteHtml) {
+  const n = view.players.length;
+  const order = guessOrder(view);
+  const readerIdx = view.players.findIndex((p) => p.isReader);
+  const chips = view.players.map((p, i) => seatChip(p, i, n, order, view)).join('');
+  const size = n > 8 ? 'many' : n > 6 ? 'some' : 'few'; // seat size by head count
+  return `<div class="card table-card">
+      <div class="round-table ${size}" id="roundTable">
+        <div class="table-top"></div>
+        <div id="tableFlow">${flowArrows(n, readerIdx)}</div>
+        ${tableCenter(view, order)}
+        ${chips}
       </div>
-      ${flow}
+      <div id="flowLine">${flowLine(view.players, order)}</div>
       ${noteHtml ? `<p class="note" style="margin-top:10px">${noteHtml}</p>` : ''}
     </div>`;
+}
+
+function flowLine(players, order) {
+  if (!order) return '<p class="seat-flow muted">Guessing goes clockwise ↻ — to each person\'s left.</p>';
+  const seq = players
+    .map((p, i) => ({ p, k: order[i] }))
+    .sort((a, b) => a.k - b.k)
+    .map(({ p }) => `<span class="${p.isReader ? 'flow-reader' : ''}">${esc(p.name)}${p.isReader ? ' (reader)' : ''}</span>`)
+    .join(' <span class="flow-arrow">→</span> ');
+  return `<p class="seat-flow"><span class="eyebrow dim">Guessing order ↻</span><br />${seq}</p>`;
 }
 
 // ---- Lobby -----------------------------------------------------------------
 function renderLobby(view) {
   currentScreen = 'lobby';
   app.className = 'app';
-  const readerNo = view.players.findIndex((p) => p.isReader) + 1;
+  const reader = view.players.find((p) => p.isReader);
   const startLabel =
     view.players.length < 2
       ? 'Need at least 2 players'
-      : !readerNo
-      ? 'Pick a reader to start'
-      : `Start the game → #${readerNo} reads`;
+      : !reader
+      ? 'Tap a player to pick the Reader'
+      : `Start the game → ${esc(reader.name)} reads`;
   app.innerHTML = `
     <div class="stack fade-in">
       <div>
@@ -207,9 +257,9 @@ function renderLobby(view) {
         <h1 class="logo" style="font-size:clamp(2rem,10vw,3rem)">The <em>Table</em></h1>
         <div class="title-underline"></div>
       </div>
-      ${seatingCard(
+      ${tableCard(
         view,
-        'Drag <strong>⠿</strong> to match where people sit. Tap <strong>Reader</strong> for whoever reads first — the next seat guesses first.'
+        '<strong>Drag</strong> people to where they actually sit. <strong>Tap</strong> someone to make them the Reader — the person to their left guesses first.'
       )}
       <div>
         <div class="eyebrow dim" style="margin-bottom:8px">Last player standing scores</div>
@@ -238,9 +288,9 @@ function renderPickReader(view) {
         <h2 class="section">Who's the reader?</h2>
         <p class="sub" style="margin-top:4px">Anyone can pick. The reader reads the card aloud, then everyone — reader included — answers. The next number guesses first.</p>
       </div>
-      ${seatingCard(view, 'Drag <strong>⠿</strong> if anyone changed seats.')}
+      ${tableCard(view, '<strong>Tap</strong> this round\'s Reader. <strong>Drag</strong> anyone who changed seats.')}
       <button class="btn gold" data-action="beginRound" ${view.canBegin ? '' : 'disabled'}>
-        ${view.canBegin ? `Start round → ${esc(view.reader.name)} reads` : 'Pick a reader to start'}
+        ${view.canBegin ? `Start round → ${esc(view.reader.name)} reads` : 'Tap a player to pick the Reader'}
       </button>
     </div>`;
 }
@@ -520,87 +570,116 @@ function reflectGuessSelection() {
 }
 
 // ===========================================================================
-// Drag-and-drop seating (Pointer Events: works with mouse, iPhone and Android)
+// Round table: drag a person to a new seat, or tap to make them Reader.
+// Pointer Events → one code path for mouse, iPhone and Android.
 // ===========================================================================
 let drag = null;
+const DRAG_THRESHOLD = 8; // px of movement before a press becomes a drag
+
+function movedOrder(from, to) {
+  const players = lastView.players.slice();
+  const [p] = players.splice(from, 1);
+  players.splice(to, 0, p);
+  return players;
+}
+
+// Slide everyone else to the seat they'd have if the dragged person landed at `to`.
+function previewSeats(to) {
+  const players = movedOrder(drag.from, to);
+  const n = players.length;
+  const order = guessOrder({ players });
+  const readerIdx = players.findIndex((p) => p.isReader);
+  drag.chips.forEach((chip) => {
+    const i = players.findIndex((p) => p.id === chip.dataset.seatId);
+    if (chip !== drag.chip) {
+      const pos = seatPos(i, n);
+      chip.style.left = pos.x + '%';
+      chip.style.top = pos.y + '%';
+    }
+    chip.querySelector('.chip-order').textContent = order ? order[i] : '';
+  });
+  document.getElementById('tableFlow').innerHTML = flowArrows(n, readerIdx);
+  document.getElementById('tableCenter').outerHTML = tableCenter({ players }, order);
+  document.getElementById('flowLine').innerHTML = flowLine(players, order);
+  drag.ghost.style.left = seatPos(to, n).x + '%';
+  drag.ghost.style.top = seatPos(to, n).y + '%';
+}
 
 app.addEventListener('pointerdown', (e) => {
-  const handle = e.target.closest('[data-drag-handle]');
-  if (!handle || drag) return;
-  const row = handle.closest('.seat-row');
-  const rows = [...document.querySelectorAll('#seatTable .seat-row')];
-  if (rows.length < 2) return;
+  const chip = e.target.closest('.seat-chip');
+  if (!chip || drag || !lastView) return;
   e.preventDefault();
-  handle.setPointerCapture(e.pointerId);
-  const rects = rows.map((r) => r.getBoundingClientRect());
+  chip.setPointerCapture(e.pointerId);
+  const table = document.getElementById('roundTable');
+  const chips = [...table.querySelectorAll('.seat-chip')];
   drag = {
     pointerId: e.pointerId,
-    handle,
-    row,
-    rows,
-    mids: rects.map((r) => r.top + r.height / 2),
-    rowH: rects[1].top - rects[0].top,
-    from: rows.indexOf(row),
-    to: rows.indexOf(row),
+    chip,
+    chips,
+    table,
+    from: chips.indexOf(chip),
+    to: chips.indexOf(chip),
+    startX: e.clientX,
     startY: e.clientY,
+    moved: false,
+    ghost: null,
   };
-  row.classList.add('dragging');
-  document.getElementById('seatTable').classList.add('is-sorting');
 });
 
 app.addEventListener('pointermove', (e) => {
   if (!drag || e.pointerId !== drag.pointerId) return;
   e.preventDefault();
-  const dy = e.clientY - drag.startY;
-  drag.row.style.transform = `translateY(${dy}px)`;
-  const center = drag.mids[drag.from] + dy;
-  let to = drag.from;
-  while (to < drag.rows.length - 1 && center > drag.mids[to + 1]) to++;
-  while (to > 0 && center < drag.mids[to - 1]) to--;
-  if (to !== drag.to) previewOrder(drag.from, to);
-  drag.to = to;
-  drag.rows.forEach((r, i) => {
-    if (r === drag.row) return;
-    let shift = 0;
-    if (drag.from < to && i > drag.from && i <= to) shift = -drag.rowH;
-    if (drag.from > to && i < drag.from && i >= to) shift = drag.rowH;
-    r.style.transform = shift ? `translateY(${shift}px)` : '';
-  });
+  if (!drag.moved) {
+    if (Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) < DRAG_THRESHOLD) return;
+    drag.moved = true;
+    drag.chip.classList.add('dragging');
+    drag.table.classList.add('is-sorting');
+    drag.ghost = document.createElement('div');
+    drag.ghost.className = 'seat-ghost';
+    drag.table.appendChild(drag.ghost);
+    previewSeats(drag.to);
+  }
+  const r = drag.table.getBoundingClientRect();
+  const x = ((e.clientX - r.left) / r.width) * 100;
+  const y = ((e.clientY - r.top) / r.height) * 100;
+  drag.chip.style.left = x + '%';
+  drag.chip.style.top = y + '%';
+  const n = drag.chips.length;
+  const angle = (Math.atan2(y - 50, x - 50) * 180) / Math.PI; // screen coords: clockwise
+  const to = (((Math.round(((angle + 90) * n) / 360) % n) + n) % n);
+  if (to !== drag.to) {
+    drag.to = to;
+    previewSeats(to);
+  }
 });
-
-// While dragging, renumber seats and recompute the Guesses column as if dropped here.
-function previewOrder(from, to) {
-  if (!lastView) return;
-  const players = lastView.players.slice();
-  const [p] = players.splice(from, 1);
-  players.splice(to, 0, p);
-  const order = guessOrder({ players });
-  drag.rows.forEach((row) => {
-    const i = players.findIndex((x) => x.id === row.dataset.seatId);
-    row.querySelector('.seat-no').textContent = i + 1;
-    row.querySelector('.seat-guess').textContent = order ? ordinal(order[i]) : '—';
-    row.querySelector('.guess-inline').textContent = order ? `guesses ${ordinal(order[i])}` : '';
-  });
-}
 
 function endDrag(e) {
   if (!drag || e.pointerId !== drag.pointerId) return;
-  const { row, from, to } = drag;
-  const id = row.dataset.seatId;
+  const { chip, from, to, moved } = drag;
+  const id = chip.dataset.seatId;
   drag = null;
-  if (to !== from && lastView) {
-    // Show the new order immediately; the server's broadcast confirms it.
-    const players = lastView.players.slice();
-    const [p] = players.splice(from, 1);
-    players.splice(to, 0, p);
-    render({ ...lastView, players });
+  if (!moved) {
+    if (e.type === 'pointerup') act('setReader', { readerId: id }); // a tap
+    return render(lastView);
+  }
+  if (to !== from) {
+    render({ ...lastView, players: movedOrder(from, to) }); // show it now; broadcast confirms
     act('movePlayer', { playerId: id, toIndex: to });
-  } else if (lastView) {
+  } else {
     render(lastView); // also applies any update that arrived mid-drag
   }
 }
 app.addEventListener('pointerup', endDrag);
 app.addEventListener('pointercancel', endDrag);
+
+// Keyboard: Enter/Space on a seat makes that player the Reader.
+app.addEventListener('keydown', (e) => {
+  const chip = e.target.closest && e.target.closest('.seat-chip');
+  if (chip && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    act('setReader', { readerId: chip.dataset.seatId });
+  }
+});
 
 // ===========================================================================
 // Boot

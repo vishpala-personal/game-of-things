@@ -92,11 +92,17 @@ ephemeral UI (current selection, in-progress answer text) lives in a small local
 while the player is still typing** (other players submitting would otherwise wipe
 their draft). **Why:** simplest correct model for an app this size.
 
-### A7a. Drag-to-reorder seating
+### A7a. Round-table seating: drag to move, tap for Reader
 
-Custom drag built on **Pointer Events** (one code path for mouse, iPhone and
-Android — HTML5 drag-and-drop doesn't work on touch). The handle has
-`touch-action: none` so a finger drags the row instead of scrolling the page.
+Seats are absolutely positioned on a circle (`seatPos(i, n)`, clockwise from
+the top; radius and seat size adapt to head count). Arrows are an inline SVG
+of arcs between neighbouring seats. Custom drag built on **Pointer Events**
+(one code path for mouse, iPhone and Android — HTML5 drag-and-drop doesn't
+work on touch); seats have `touch-action: none` so a finger drags instead of
+scrolling. A press that moves < 8px is a **tap** (→ `setReader`); beyond that
+it's a drag: the person follows the finger, the target seat is the nearest
+angle around the table centre, and everyone else slides to their would-be
+seats (badges, arrows, centre text and order line update too).
 While a drag is in progress, incoming server views are **held** (re-rendering
 would cancel the drag) and applied on drop. The client sends a single
 `movePlayer {playerId, toIndex}` action, not a whole new order, so a join or

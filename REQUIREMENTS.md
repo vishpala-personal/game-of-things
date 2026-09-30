@@ -116,16 +116,21 @@ board. Specifics:
 
 ### Reader designation — chosen each round (not auto-assigned)
 
-- Players are given **serial numbers 1, 2, 3, 4… by join order**, shown in a
-  **seating table**. **Any player can drag a name (⠿ handle) to a new seat** in
-  the lobby or on the pick-reader screen, so the order matches where people
-  actually sit. Seat number = guessing order. (Reordering is locked during a
-  round.) *Supersedes the earlier "no manual reordering" decision — the plain
-  list made the order hard to visualise.*
-- The table has a **Guesses** column (1st, 2nd, …) recomputed from the Reader,
-  plus a one-line **guessing order** ("Dan → Ann → Bob → Cat (reader)"). Both
-  update live while dragging. On phones (≤430px) the column moves to a small
-  "guesses Nth" line under each name so long names fit.
+- Players join in order (serial 1, 2, 3…) and are shown **sitting around a
+  drawn round table**, clockwise from the top — a picture of the real table.
+  **Any player can drag a person to the seat where they actually sit** (lobby
+  or pick-reader screen; locked during a round). Seat order = guessing order.
+  *Supersedes the earlier "no manual reordering" decision, and the interim
+  list/table version — the order is far easier to see on a picture.*
+- **Tap a person to make them the Reader** (replaces per-row Reader buttons).
+- The picture shows the guessing flow: **clockwise arrows** on the table top
+  (the arrow leaving the Reader is gold — that's where guessing starts), a gold
+  **number badge** on each person (1 = guesses first … Reader = last), and the
+  table centre says who reads and who guesses first. A one-line "Guessing
+  order: Dan → Ann → Bob → Cat (reader)" sits below. Everything previews live
+  while dragging.
+- Clockwise on screen = to each person's left at the real table, matching the
+  physical rule.
 - Each player row shows a **Reader** button that **any player** can press to
   select who reads. The selection is **committed when the round is started**:
   - **Round 1** — the Reader is chosen in the **lobby**; pressing **Start the

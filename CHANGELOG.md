@@ -5,7 +5,23 @@ live in `REQUIREMENTS.md`; architecture in `ARCHITECTURE.md`.
 
 ## 2026-09-29
 
-### Changed — seating table with drag-and-drop order
+### Changed — visual round table (replaces the seating list below)
+- Lobby and pick-reader screens now draw a **round table with everyone seated
+  around it** (clockwise from the top). **Drag** a person to where they really
+  sit; **tap** a person to make them the Reader.
+- Guessing flow is drawn on the table: clockwise arrows (gold from the Reader),
+  a number badge per person (guessing order), centre shows Reader + first
+  guesser, plus the one-line order below. All preview live while dragging.
+- Seat size and spacing adapt to 2–10 players; long names shrink to fit (at 10
+  players on a 360px phone a very long name may end in "…").
+- **Verified** in real-browser tests on Node 22 and Node 24 (iPhone 13, Pixel 7,
+  Galaxy S8 360px, desktop): clockwise seat positions, tap-to-Reader (incl. a
+  slightly wobbly tap), mouse + iPhone + Android drags, live preview of badges /
+  centre / order line, no page scroll, updates on every phone, drag survives a
+  concurrent Reader change, game uses the new seating; plus 6/8/10-player
+  layouts with no overlaps. Guard + gameplay tests still pass.
+
+### Changed — seating table with drag-and-drop order (superseded same day)
 - Lobby and pick-reader screens now show a **seating table** (⠿ handle, seat #,
   player, Guesses column, Reader button) instead of a plain list, plus a
   "Guessing order: A → B → C (reader)" line.

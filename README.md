@@ -41,8 +41,9 @@ allowed in." with no hint about the WiFi or how to get in.
 ## How a round flows
 
 1. **Join** — everyone enters a name and is numbered **1, 2, 3, …** in join
-   order. In the lobby's seating table, drag **⠿** to match where people sit
-   (the table shows who guesses 1st, 2nd, …), tap **Reader** next to whoever reads first and set whether
+   order and shown sitting around a drawn table. **Drag** people to where they
+   really sit and **tap** whoever reads first (the badges show who guesses 1st,
+   2nd, …) and set whether
    the last player standing scores **3** or **2** points, then **Start** (which
    commits the reader).
 2. **Answer** — the reader reads the physical card aloud. Everyone (reader
