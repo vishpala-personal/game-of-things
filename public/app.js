@@ -295,12 +295,41 @@ function renderPickReader(view) {
     </div>`;
 }
 
+// ---- Answer draft (survives a page refresh) --------------------------------
+// Kept only on this phone (localStorage), tagged with player + round so an old
+// draft never shows up in a later round or for someone else on the same device.
+const DRAFT_KEY = 'got_draft';
+function loadDraft(round) {
+  try {
+    const d = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');
+    return d && d.pid === pid && d.round === round ? d.text : '';
+  } catch {
+    return '';
+  }
+}
+function saveDraft(round, text) {
+  try {
+    if (text) localStorage.setItem(DRAFT_KEY, JSON.stringify({ pid, round, text }));
+    else localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* storage unavailable (e.g. private mode) — draft just won't survive a refresh */
+  }
+}
+function clearDraft() {
+  try {
+    localStorage.removeItem(DRAFT_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 // ---- Answering -------------------------------------------------------------
 function renderAnswering(view) {
   app.className = 'app';
   const reader = view.reader ? view.reader.name : '';
   if (!view.you.submitted) {
     currentScreen = 'answerInput';
+    if (!ui.answerText) ui.answerText = loadDraft(view.roundNumber);
     app.innerHTML = `
       <div class="stack fade-in">
         ${topbar(view)}
@@ -315,9 +344,14 @@ function renderAnswering(view) {
       </div>`;
     const ta = document.getElementById('answerInput');
     ta.focus();
-    ta.addEventListener('input', () => (ui.answerText = ta.value));
+    ta.setSelectionRange(ta.value.length, ta.value.length); // cursor after a restored draft
+    ta.addEventListener('input', () => {
+      ui.answerText = ta.value;
+      saveDraft(view.roundNumber, ta.value);
+    });
     return;
   }
+  clearDraft(); // submitted — nothing left to restore
   currentScreen = 'answerWait';
   app.innerHTML = `
     <div class="stack fade-in">
@@ -533,6 +567,7 @@ app.addEventListener('click', (e) => {
       const text = document.getElementById('answerInput').value.trim();
       if (!text) return;
       ui.answerText = '';
+      clearDraft();
       return act('submitAnswer', { text });
     }
     case 'pickAnswer':

@@ -5,6 +5,17 @@ live in `REQUIREMENTS.md`; architecture in `ARCHITECTURE.md`.
 
 ## 2026-09-29
 
+### Added — answer draft survives a refresh
+- A half-typed answer is saved on the phone and restored (cursor at the end) if
+  the page is refreshed or the browser reloads. Cleared on submit; a draft from
+  an earlier round is ignored. Stays on the phone — never sent until submitted.
+- **Verified** on Node 22 and Node 24 with a full 4-phone browser run of the
+  answering flow (table → answer → wait → reveal → guess → round 2): draft
+  restored after refresh, deleted after submit, stale draft ignored, plus the
+  existing checks (blank rejected, draft survives others submitting, count-only
+  waiting screen, duplicate answer ignored, nothing leaked before all answers
+  are in, bystanders get no slips, first guesser follows the table).
+
 ### Changed — visual round table (replaces the seating list below)
 - Lobby and pick-reader screens now draw a **round table with everyone seated
   around it** (clockwise from the top). **Drag** a person to where they really

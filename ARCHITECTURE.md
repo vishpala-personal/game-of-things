@@ -91,6 +91,9 @@ ephemeral UI (current selection, in-progress answer text) lives in a small local
 `ui` object and is re-applied. One guard: **do not re-render the answer textarea
 while the player is still typing** (other players submitting would otherwise wipe
 their draft). **Why:** simplest correct model for an app this size.
+The unsent answer is also saved to `localStorage` (`got_draft`, tagged with
+pid + round) so a phone refresh restores it; it's deleted on submit and ignored
+in any other round. It never leaves the phone until the player submits.
 
 ### A7a. Round-table seating: drag to move, tap for Reader
 
